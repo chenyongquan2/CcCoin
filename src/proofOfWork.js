@@ -20,16 +20,16 @@ console.log(sha256('cyq123456').toString() === sha256('cyq123456').toString())
 
 function proofOfWork(difficulty) {
     const data = 'cyq12345'
-    let nounce = 1
+    let nonce  = 1
     const answerPrev = '0'.repeat(difficulty)
     while (true) {
-        let shaStr = sha256(data + nounce).toString()
+        let shaStr = sha256(data + nonce ).toString()
         if (shaStr.substring(0, difficulty) !== answerPrev) {
-            nounce++;
+            nonce++;
         }
         else {
             //模板字符串 (用反引号 ` 括起来的字符串)来进行字符串拼接。在模板字符串中,你可以使用 ${} 来插入变量值。
-            console.log(`得到的hash是:${shaStr},次数是:${nounce}`)
+            console.log(`得到的hash是:${shaStr},次数是:${nonce}`)
             break;
         }
     }
