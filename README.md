@@ -7,6 +7,7 @@ install node.js
 ```
 cd $YourPrejectPath
 npm install crypto-js 
+npm install elliptic
 ```
 
 ## how to run
