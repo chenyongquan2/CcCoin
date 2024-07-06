@@ -1,4 +1,6 @@
 # CcCoin
+a digital coin demo like BitCoin. 
+The local version of the digital currency implementation has not yet realized non-distributed storage
 
 ## env prepare
 install node.js
