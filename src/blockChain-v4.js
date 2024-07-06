@@ -10,18 +10,61 @@
 //接着对这个block进行挖矿，算出nonce，以及符合Chain难度要求的hash值
 //4.该block被添加到chain里面
 
+//v4版本
+//1.使用数字签名，来对transction交易记录进行加密，防止被别人篡改以及实现身份校验
+//2.transction类提供签名和计算hash的方法
+//3.在一些地方对交易transction对象进行合法性的检查,时机主要有:
+//case1：添加待存储的transction到transction pool里面
+//case2: 开挖之前，应该要检查一下即将要挖来存储的transctions的合法性,避免浪费算力
+//case3: 验证区块的合法性的方法也要加上对transction的合法性交易这块的逻辑
+
+//require:
 //引入依赖之前得在项目根目录下先用npm来安装相关的依赖
 //eg: npm install crypto-js
 //引入依赖
 const sha256 = require('crypto-js/sha256')
+//ec 代表的是 "elliptic curve" 的缩写
+const ecLib = require('elliptic').ec
+//并指定了使用 secp256k1 椭圆曲线
+//ecp256k1 是一种广泛使用的椭圆曲线,它被许多加密货币和区块链项目所采用,如比特币、以太坊等
+const ec = new ecLib('secp256k1')
 
 
 class Transaction {
+    //from和to表示交易者的钱包地址，amount表示交易的金额
     constructor(from, to, amount) {
         this.from = from
         this.to = to
         this.amount = amount
         //this.timeStamp=timeStamp
+    }
+
+    //计算交易数据的hash
+    computeHash() {
+        return sha256(
+            this.from +
+            this.to +
+            this.amount
+        ).toString()
+    }
+
+    //签名需要private key来对交易数据的hash值进行签名
+    sign(keyPair) {
+        //其实这里签名只需要keyPair里的privateKey来进行签名
+        this.signature = keyPair.sign(this.computeHash(), 'base64').toDER('hex')
+    }
+
+    isValid() {
+        //当this.from === ''，说明该转账是由区块链发起的矿工奖励，无需校验签名的合法性
+        if (this.from === '') {
+            return true
+        }
+
+        //获取交易发起者的公钥
+        //const senderPublicKey = ec.keyFromPublic(keyPair.getPublic('hex'),'hex')
+        const fromPublicKey = ec.keyFromPublic(this.from, 'hex')
+        //验证签名的合法性
+        return fromPublicKey.verify(this.computeHash(), this.signature)
     }
 }
 
@@ -59,9 +102,28 @@ class Block {
         return '0'.repeat(difficulty)
     }
 
+    //开挖之前，应该要检查一下即将要挖来存储的transctions的合法性
+    validateBlockTransations() {
+        for (const t of this.transations) {
+            console.log('检查的transction为:', t)
+            if (!t.isValid()) {
+                //交由外面判断这个isValid的结果了，这里就不去抛出错误了，而是gentel一点，打印一个log，返回false
+                //throw new Error('invalid transaction found in transations, 发现异常交易')
+                console.log('invalid transaction found in transations, 发现异常交易')
+                return false //会被前面的throw Error给短路处理，走不到这里其实
+            }
+        }
+        return true
+    }
+
     //计算符号区块难度要求的hash
     //为什么需要引入难度要求?为了控制每10min会有一个区块被挖矿挖出来，需要动态调整这个难度要求
     mine(difficulty) {
+        console.log('对block即将要挖的所有transctions进行检查...')
+        //开挖之前，应该要检查一下即将要挖来存储的transctions的合法性,避免浪费算力
+        this.validateBlockTransations()
+        console.log('对block即将要挖的所有transctions检查通过,即将开始挖矿...')
+
         const ans = this.getAnswer(difficulty)
 
         while (true) {
@@ -137,7 +199,12 @@ class Chain {
 
     //添加待存储的transction到transction pool里面，供后续挖出来的block来存储这些transction交易记录
     addTransction2Pool(transaction) {
+        //添加transaction到transationsPool之前，先校验一下transation的合法性
+        if (!transaction.isValid()) {
+            throw new Error('invalid transaction,reject it')
+        }
         this.transationsPool.push(transaction)
+        console.log('valid transaction has push to transationsPool')
     }
 
     //验证区块的合法性
@@ -164,44 +231,72 @@ class Chain {
                 console.log('区块', i, '断联了!')
                 return false;
             }
+
+            //还需要验证 链里面的每一个区块是否被篡改了
+            if (!blcok.validateBlockTransations()) {
+                console('发现链里面有非法交易,异常block idx:', i)
+                return false
+            }
         }
+
         return true
     }
 }
 
 let difficulty = 4
 const myChain = new Chain(difficulty)
-const t0 = new Transaction('kunkun', 'chaoguanghe', 90.75 * 4)
-const t1 = new Transaction('fashaoyou', 'kunkun', 90.75)
-const t2 = new Transaction('ishao', 'kunkun', 90.75)
-const t3 = new Transaction('cc', 'kunkun', 90.75)
-//添加交易记录到chain的交易池子transactionPool里，等待"挖出来"的block来保存这些交易记录
-myChain.addTransction2Pool(t0)
-myChain.addTransction2Pool(t1)
-myChain.addTransction2Pool(t2)
-myChain.addTransction2Pool(t3)
-console.log(myChain)
 
+//生成两个交易者身份的密钥对,也就是对应了钱包地址
+const senderKeyPair = ec.genKeyPair()
+const senderPrivateKey = senderKeyPair.getPrivate('hex')
+const senderPublicKey = senderKeyPair.getPublic('hex')
+
+const receiverKeyPair = ec.genKeyPair()
+const receiverPrivateKey = receiverKeyPair.getPrivate('hex')
+const receiverPublicKey = receiverKeyPair.getPublic('hex')
+
+//公钥作为钱包的地址，标记转账时哪个钱包地址->另外一个钱包地址
+const t1 = new Transaction(senderPublicKey, receiverPublicKey, 100)
+//使用发送者的密钥对里(其实只用到了私钥)来进行签名
+t1.sign(senderKeyPair)
+// console.log('签名合法性校验的结果:', t1.isValid())
+
+const t2 = new Transaction(senderPublicKey, receiverPublicKey, 99)
+t2.sign(senderKeyPair)
+//尝试签名后再去篡改内容
+//t2.amount = 1000000000
+
+//尝试添加交易记录到chain的交易池子transactionPool里，等待"挖出来"的block来保存这些交易记录
+myChain.addTransction2Pool(t1);
+myChain.addTransction2Pool(t2);
+
+//准备矿工的身份
+const minerKeyPair = ec.genKeyPair()
+const minerPrivateKey = receiverKeyPair.getPrivate('hex')
+const minerPublicKey = receiverKeyPair.getPublic('hex')
+
+
+//尝试添加到TransctionPool后，挖矿前再去篡改内容
+////尝试去篡改里面某个transcation的交易数据
+//Todo注意:更改外面的t2, 无法篡改到myChain里面的t2,因为myChain.addTransction2Pool(t2);是会对t2来进行拷贝
+//myChain.chain[1].transations[0].amount = 88888888 
+//Todo:下面语句会报错：TypeError: Cannot read properties of undefined (reading 'transations')
+//const transationsInBlock1 = myChain.chain[1].transations
+//原因是因为 添加新区块到链上是在mineTransctionFromPool去执行的...挖矿前，block还没被添加到chain里...
+//this.chain.push(newBlock)
+
+//挖矿
 console.log('正在挖矿...')
-myChain.mineTransctionFromPool('cc')
+myChain.mineTransctionFromPool(minerPrivateKey)
 console.log('挖完矿了')
-console.log(myChain)
-console.log(myChain.chain[1].transations)
 
-// const block1 = new Block('转账10元', '')
-// myChain.addBlock2Chain(block1)
+console.log('myChain的详细情况:', myChain)
+console.log('myChain.chain[1].transations的详细情况:', myChain.chain[1].transations)
 
-// const block2 = new Block('转账100元', '')
-// myChain.addBlock2Chain(block2)
 
-// console.log('区块链初始化完成:', myChain)
 
-//判断区块链是否合法
-// console.log(myChain.isValidChain())
 
-//尝试去篡改block1的交易数据
-// myChain.chain[1].transations ='转账1000000元'
-// console.log(myChain.isValidChain()) //区块 1 被篡改了!
+
 
 //比特币是如何通过proofOfWork来从目的上去篡改的发生的呢?
 //因为篡改数据后，你需要重新去找到一个新的hash满足区块的复杂度要求的规则(例如hash值的前x位必须为0),假如这么一个挖矿算出hash/篡改过程需要4s
