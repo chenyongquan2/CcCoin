@@ -2,5 +2,8 @@
   "dependencies": {
     "crypto-js": "^4.2.0",
     "elliptic": "^6.5.5"
+  },
+  "scripts": {
+    "build": "node src/blockChain-v4.js"
   }
 }
