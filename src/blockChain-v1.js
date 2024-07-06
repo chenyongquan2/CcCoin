@@ -89,10 +89,10 @@ class Chain {
 const myChain = new Chain(4)
 //console.log(chain)
 
-const block1 = new Block('转租10元', '')
+const block1 = new Block('转账10元', '')
 myChain.addBlock2Chain(block1)
 
-const block2 = new Block('转租100元', '')
+const block2 = new Block('转账100元', '')
 myChain.addBlock2Chain(block2)
 
 console.log(myChain)
